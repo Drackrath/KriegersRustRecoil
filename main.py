@@ -14,6 +14,7 @@ import time
 from pywinauto import mouse as win_mouse
 from queue import Queue
 import threading
+import ctypes
 
 # Speed and delay settings
 speed = 50
@@ -28,14 +29,17 @@ screen_height = monitor.height
 capture_width = 750
 capture_height = 150
 
+current_template = None  # Initialize at the start of your script
+
 # Calculate the top left and bottom right points of the capture area
 top_left = (int((screen_width - capture_width) / 2), int(screen_height - capture_height))
 bottom_right = (int((screen_width + capture_width) / 2), screen_height)
 
 # Prepare the templates
 templates = [
-    {"path": "Semi-Automatic_Rifle_icon_100x100.png", "dx": 0, "dy": 100},
-    # Add more templates as needed
+    {"path": "Semi-Automatic_Rifle_icon_100x100.png", "dx": 0, "dy": 20, "delay": 0.1, "speed": 1.0, "loop": True},
+  #  {"path": "Thompson_icon_100x100.png", "dx": 50, "dy": 50, "delay": 0.2, "speed": 1.5, "loop": False},
+    # ... Add more templates as needed ...
 ]
 for template in templates:
     template_path = os.path.join('templates', template["path"])
@@ -129,7 +133,8 @@ def check_image():
         # If the template image is found in the screenshot, draw a circle at the center of each match
         if np.any(loc[0]):
             print(f'Found match for template {template["path"]}. Moving mouse by {template["dx"]}, {template["dy"]}')
-
+            global current_template
+            current_template = template
             for pt in zip(*loc[::-1]):
                 center_x = pt[0] + template["shape"][0] // 2
                 center_y = pt[1] + template["shape"][1] // 2
@@ -139,33 +144,64 @@ def check_image():
 
             cv2.imwrite("matches.png", cv2.cvtColor(img_color, cv2.COLOR_RGB2BGR))  # Save the image with matches
 
-            return template["dx"], template["dy"]
-    return None, None
+            return template["dx"], template["dy"], template["delay"], template["speed"]
+    return None, None, None, None
 
+
+# Structure for mouse input event
+class MOUSEINPUT(ctypes.Structure):
+    _fields_ = (("dx", ctypes.c_long),
+                ("dy", ctypes.c_long),
+                ("mouseData", ctypes.c_ulong),
+                ("dwFlags", ctypes.c_ulong),
+                ("time", ctypes.c_ulong),
+                ("dwExtraInfo", ctypes.POINTER(ctypes.c_ulong)))
+
+# Structure for input event
+class INPUT(ctypes.Structure):
+    _fields_ = [("type", ctypes.c_ulong),
+                ("mouse", MOUSEINPUT)]
 
 def move_mouse(dx, dy):
-    current_pos = win_mouse.get_cursor_position()
-    new_pos = (current_pos.x + dx, current_pos.y + dy)
-    win_mouse.move(coords=new_pos)
+    print(f'Moving mouse to: {dx} and {dy} ')
+    # Create a new mouse input event
+    mouse_input = MOUSEINPUT(dx, dy, 0, 0x0001, 0, None)
+
+    # Create a new input event
+    input_event = INPUT(0, mouse_input)
+
+    # Call the SendInput function from user32.dll to send the input event
+    ctypes.windll.user32.SendInput(1, ctypes.byref(input_event), ctypes.sizeof(input_event))
 
 
 # Define the mouse callback function
 
-def perform_mouse_movement(x, y):
-    def mouse_move_thread(x, y):
-        # Perform the mouse movement using pywinauto
-        win_mouse.move(coords=(x, y))
-
-    threading.Thread(target=mouse_move_thread, args=(x, y)).start()
+def perform_mouse_movement(dx, dy, delay, speed):
+    def mouse_move_thread(dx, dy, delay, speed):
+        global current_template
+        # Loop as long as there is a current template
+        while current_template is not None:
+            # Perform the mouse movement using ctypes
+            move_mouse(dx, dy)
+            # Apply the delay and speed
+            time.sleep(delay)
+            # Update dx and dy based on the current template's dx and dy
+            dx += current_template["dx"]
+            dy += current_template["dy"]
+    threading.Thread(target=mouse_move_thread, args=(dx, dy, delay, speed)).start()
 
 # New function for pynput mouse event handling
 def on_click(x, y, button, pressed):
+    print('{0} at {1}'.format(
+        'Pressed' if pressed else 'Released',
+        (x, y)))
+
     global check_image_flag
     if button == Button.left and pressed and check_image_flag:
-        dx, dy = check_image()
+        dx, dy, delay, speed = check_image()
         if dx is not None and dy is not None:
             # Perform mouse movement in a separate function
-            perform_mouse_movement(x + dx, y + dy)
+            perform_mouse_movement(dx, dy, delay, speed)
 
 def wndProc(hwnd, message, wParam, lParam):
     return win32gui.DefWindowProc(hwnd, message, wParam, lParam)
