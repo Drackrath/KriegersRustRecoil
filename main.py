@@ -1,3 +1,5 @@
+import sys
+
 import cv2
 import numpy as np
 from PIL import ImageGrab
@@ -12,9 +14,11 @@ import win32con
 import win32api
 import time
 from pywinauto import mouse as win_mouse
-from queue import Queue
 import threading
 import ctypes
+from threading import Thread
+from queue import Queue
+import keyboard
 
 # Speed and delay settings
 speed = 50
@@ -36,26 +40,43 @@ top_left = (int((screen_width - capture_width) / 2), int(screen_height - capture
 bottom_right = (int((screen_width + capture_width) / 2), screen_height)
 
 # Prepare the templates
+# Prepare the templates
+#{0.000000,-2.257792},{0.323242,-2.300758},{0.649593,-2.299759},{0.848786,-2.259034},{1.075408,-2.323947},{1.268491,-2.215956},{1.330963,-2.236556},{1.336833,-2.218203},{1.505516,-2.143454},{1.504423,-2.233091},{1.442116,-2.270194},{1.478543,-2.204318},{1.392874,-2.165817},{1.480824,-2.177887},{1.597069,-2.270915},{1.449996,-2.145893},{1.369179,-2.270450},{1.582363,-2.298334},{1.516872,-2.235066},{1.498249,-2.238401},{1.465769,-2.331642},{1.564812,-2.242621},{1.517519,-2.303052},{1.422433,-2.211946},{1.553195,-2.248043},{1.510463,-2.285327},{1.553878,-2.240047},{1.520380,-2.221839},{1.553878,-2.240047},{1.553195,-2.248043} },
+#[[0.000000,-2.257792],{0.323242,-2.300758},{0.649593,-2.299759},{0.848786,-2.259034},{1.075408,-2.323947},{1.268491,-2.215956},{1.330963,-2.236556},{1.336833,-2.218203},{1.505516,-2.143454},{1.504423,-2.233091},{1.442116,-2.270194},{1.478543,-2.204318},{1.392874,-2.165817},{1.480824,-2.177887},{1.597069,-2.270915},{1.449996,-2.145893},{1.369179,-2.270450},{1.582363,-2.298334},{1.516872,-2.235066},{1.498249,-2.238401},{1.465769,-2.331642},{1.564812,-2.242621},{1.517519,-2.303052},{1.422433,-2.211946},{1.553195,-2.248043},{1.510463,-2.285327},{1.553878,-2.240047},{1.520380,-2.221839},{1.553878,-2.240047},{1.553195,-2.248043} },
+#[[-38, 52.3906], [12, 46], [-43, 42], [-58, 37], [0, 34], [0, 28], [34.5, 25], [22.5, 26],
+#                    [42.5, 18], [36, 10], [39, 15], [39, 18], [28, 18], [24, 28], [5, 29], [-18, 32], [-30, 33],
+#                    [-34, 32], [-36, 29], [-43, 24], [-45, 17], [-45, 8], [-43, 5], [-28, 14], [-19, 21],
+#                    [0, 25], [0, 28], [40, 28], [53, 26], [48, 15], [38, 21]],
+
+
 templates = [
-    {"path": "Semi-Automatic_Rifle_icon_100x100.png", "dx": 0, "dy": 20, "delay": 0.1, "speed": 1.0, "loop": True},
-  #  {"path": "Thompson_icon_100x100.png", "dx": 50, "dy": 50, "delay": 0.2, "speed": 1.5, "loop": False},
-    # ... Add more templates as needed ...
+    {
+        "path": "Semi-Automatic_Rifle_Screenshot.png",
+        "offsets": [ [0.000000,-2.257792],[0.323242,-2.300758],[0.649593,-2.299759],[0.848786,-2.259034],[1.075408,-2.323947],
+  [1.268491,-2.215956],[1.330963,-2.236556],[1.336833,-2.218203],[1.505516,-2.143454],[1.504423,-2.233091],
+  [1.442116,-2.270194],[1.478543,-2.204318],[1.392874,-2.165817],[1.480824,-2.177887],[1.597069,-2.270915],
+  [1.449996,-2.145893],[1.369179,-2.270450],[1.582363,-2.298334],[1.516872,-2.235066],[1.498249,-2.238401],
+  [1.465769,-2.331642],[1.564812,-2.242621],[1.517519,-2.303052],[1.422433,-2.211946],[1.553195,-2.248043],
+  [1.510463,-2.285327],[1.553878,-2.240047],[1.520380,-2.221839],[1.553878,-2.240047],[1.553195,-2.248043] ],
+        "delay": 0.13333,
+        "speed": 1.0,
+        "loop": True
+    }
 ]
 for template in templates:
     template_path = os.path.join('templates', template["path"])
-    template_image = cv2.imread(template_path, 0)
+    template_image = cv2.imread(template_path, cv2.IMREAD_UNCHANGED)
     template["image"] = template_image
     template["shape"] = template_image.shape[::-1]
 
 # Keep track of the last time the image was checked
 check_image_flag = True
 
-from threading import Thread
-from queue import Queue
+
 
 # Initialize a task queue
 task_queue = Queue()
-
+should_exit = False
 
 # Worker function to process tasks from the queue
 def worker_func():
@@ -66,9 +87,24 @@ def worker_func():
         task()
 
 
+
+def check_for_exit_key():
+    global should_exit
+    while True:
+        if keyboard.is_pressed('f3'):  # if key 'f3' is pressed
+            print('Exiting Program')
+            should_exit = True
+            break
+
+
+
 # Start the worker thread
 worker_thread = Thread(target=worker_func)
 worker_thread.start()
+
+exit_thread = threading.Thread(target=check_for_exit_key, daemon=True)
+exit_thread.start()
+
 
 
 # Adjustment in the on_key function
@@ -85,6 +121,8 @@ def on_key(key):
             new_pos = (current_pos[0] + dx, current_pos[1] + dy)
             win_mouse.move(coords=new_pos)
         win32gui.ShowWindow(hwnd, win32con.SW_HIDE)
+
+
 
 
 def make_window_transparent(show):
@@ -112,40 +150,51 @@ def check_image():
     # Capture screenshot in the defined area
     screenshot = ImageGrab.grab(bbox=(top_left[0], top_left[1], bottom_right[0], bottom_right[1]))
 
-    # Convert the screenshot to a numpy array and then to grayscale
-    img_gray = cv2.cvtColor(np.array(screenshot), cv2.COLOR_BGR2GRAY)
-    img_color = cv2.cvtColor(np.array(screenshot), cv2.COLOR_BGR2RGB)  # create a colored version for drawing
+    # Convert the screenshot to a numpy array
+    img_color = cv2.cvtColor(np.array(screenshot), cv2.COLOR_RGB2BGR)
 
     for template in templates:
         # Perform template matching
-        if img_gray.shape[0] < template["shape"][0] or img_gray.shape[1] < template["shape"][1]:
+        if img_color.shape[0] < template["shape"][0] or img_color.shape[1] < template["shape"][1]:
             print(f'Template image is larger than screenshot. Skipping template {template["path"]}.')
             continue
 
-        res = cv2.matchTemplate(img_gray, template["image"], cv2.TM_CCOEFF_NORMED)
-        print(f'Max match value for template {template["path"]}: {res.max()}')  # Print max match value for debug
-        threshold = 0.30
-        loc = np.where(res >= threshold)
+        tmplt = template["image"]
+        hh, ww = tmplt.shape[:2]
 
-        # Print the locations of the matches
-        print(f'Match locations for template {template["path"]}: {loc}')
+        # extract template mask as grayscale from alpha channel and make 3 channels
+        tmplt_mask = tmplt[:, :, 3]
+        tmplt_mask = cv2.merge([tmplt_mask, tmplt_mask, tmplt_mask])
 
-        # If the template image is found in the screenshot, draw a circle at the center of each match
-        if np.any(loc[0]):
-            print(f'Found match for template {template["path"]}. Moving mouse by {template["dx"]}, {template["dy"]}')
+        # extract templt2 without alpha channel from tmplt
+        tmplt2 = tmplt[:, :, 0:3]
+
+        # do template matching
+        corrimg = cv2.matchTemplate(img_color, tmplt2, cv2.TM_CCORR_NORMED, mask=tmplt_mask)
+        min_val, max_val, min_loc, max_loc = cv2.minMaxLoc(corrimg)
+        max_val_ncc = '{:.3f}'.format(max_val)
+        print("correlation match score: " + max_val_ncc)
+        xx = max_loc[0]
+        yy = max_loc[1]
+        print('xmatch =', xx, 'ymatch =', yy)
+
+        # draw red bounding box to define match location
+        result = img_color.copy()
+        pt1 = (xx, yy)
+        pt2 = (xx + ww, yy + hh)
+        cv2.rectangle(result, pt1, pt2, (0, 0, 255), 1)
+
+        cv2.imwrite("matches.png", result)  # Save the image with matches
+
+        if float(max_val_ncc) >= 0.9:
+            print(f'Found match for template {template["path"]}')
+
+            # Set the current_template to this template
             global current_template
             current_template = template
-            for pt in zip(*loc[::-1]):
-                center_x = pt[0] + template["shape"][0] // 2
-                center_y = pt[1] + template["shape"][1] // 2
 
-                # Draw a circle at the center of the match
-                cv2.circle(img_color, (center_x, center_y), 10, (0, 255, 0), -1)
-
-            cv2.imwrite("matches.png", cv2.cvtColor(img_color, cv2.COLOR_RGB2BGR))  # Save the image with matches
-
-            return template["dx"], template["dy"], template["delay"], template["speed"]
-    return None, None, None, None
+        return template["offsets"], template["delay"], template["speed"]
+    return None, None, None
 
 
 # Structure for mouse input event
@@ -165,7 +214,7 @@ class INPUT(ctypes.Structure):
 def move_mouse(dx, dy):
     print(f'Moving mouse to: {dx} and {dy} ')
     # Create a new mouse input event
-    mouse_input = MOUSEINPUT(dx, dy, 0, 0x0001, 0, None)
+    mouse_input = MOUSEINPUT(round(dx), round(dy), 0, 0x0001, 0, None)
 
     # Create a new input event
     input_event = INPUT(0, mouse_input)
@@ -175,33 +224,43 @@ def move_mouse(dx, dy):
 
 
 # Define the mouse callback function
-
-def perform_mouse_movement(dx, dy, delay, speed):
-    def mouse_move_thread(dx, dy, delay, speed):
+mouse_pressed = False
+current_thread = None
+def perform_mouse_movement(offsets, delay, speed, offset_multiplier=17.2):
+    def mouse_move_thread(offsets, delay, speed, offset_multiplier):
         global current_template
-        # Loop as long as there is a current template
-        while current_template is not None:
-            # Perform the mouse movement using ctypes
-            move_mouse(dx, dy)
-            # Apply the delay and speed
+        global mouse_pressed
+        idx = 0  # Index to keep track of current offset
+        while current_template is not None and mouse_pressed:  # Only loop if mouse_pressed is True
+            # Get the current offset, invert values, and apply multiplier
+            offset = offsets[idx]
+            offset = [-1 * element * offset_multiplier for element in offset]  # Invert offset values and apply multiplier
+            # Perform the mouse movement
+            move_mouse(*offset)
+            # Wait for delay
             time.sleep(delay)
-            # Update dx and dy based on the current template's dx and dy
-            dx += current_template["dx"]
-            dy += current_template["dy"]
-    threading.Thread(target=mouse_move_thread, args=(dx, dy, delay, speed)).start()
+            idx = (idx + 1) % len(offsets)  # Move to next offset, loop back to start if at end
+
+    global current_thread
+    current_thread = threading.Thread(target=mouse_move_thread, args=(offsets, delay, speed, offset_multiplier))
+    current_thread.start()
 
 # New function for pynput mouse event handling
 def on_click(x, y, button, pressed):
-    print('{0} at {1}'.format(
-        'Pressed' if pressed else 'Released',
-        (x, y)))
+    print('{0} at {1}'.format('Pressed' if pressed else 'Released', (x, y)))
 
     global check_image_flag
-    if button == Button.left and pressed and check_image_flag:
-        dx, dy, delay, speed = check_image()
-        if dx is not None and dy is not None:
-            # Perform mouse movement in a separate function
-            perform_mouse_movement(dx, dy, delay, speed)
+    global mouse_pressed
+    global current_thread
+    if button == Button.left:
+        if pressed and check_image_flag:
+            mouse_pressed = True
+            offsets, delay, speed = check_image()
+            if offsets is not None and current_thread is None or not current_thread.is_alive():
+                # Perform mouse movement in a separate function
+                perform_mouse_movement(offsets, delay, speed)
+        else:
+            mouse_pressed = False
 
 def wndProc(hwnd, message, wParam, lParam):
     return win32gui.DefWindowProc(hwnd, message, wParam, lParam)
@@ -234,7 +293,7 @@ def create_window():
         None)  # Window creation data
 
     # Set the window's transparency
-    win32gui.SetLayeredWindowAttributes(hwnd, win32api.RGB(0, 0, 0), 128, win32con.LWA_ALPHA)
+    win32gui.SetLayeredWindowAttributes(hwnd, win32api.RGB(0, 0, 0), 16, win32con.LWA_ALPHA)
 
     # Show the window
     win32gui.ShowWindow(hwnd, win32con.SW_SHOW)
@@ -256,4 +315,4 @@ if __name__ == "__main__":
     create_window()
 
     while True:
-        time.sleep(1)
+        time.sleep(1000)
